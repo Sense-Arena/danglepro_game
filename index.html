@@ -243,6 +243,15 @@
       const LANE_COUNT = 6;
       const PLAY_BOUNDS = { left: 45, right: DIM.w - 45 };
       const DEBUG = { collisions: false, lanes: false };
+      // прямоугольный хитбокс у клюшки
+      const STICK_HITBOX = {
+        w: 40,   // ширина прямоугольника
+        h: 70    // высота прямоугольника
+      };
+      const OBJ_HITBOX_TIGHTNESS_X = 0.70;
+      const OBJ_HITBOX_TIGHTNESS_Y = 0.70;
+
+      const OBJ_SCALE = 0.65
 
       /* ========================================== */
 
@@ -429,21 +438,32 @@
 
         // Collision (only if we still have life)
         if (lives > 0) {
-          const puck = getPuckWorld();
+          const stickHB = getStickHitbox();
+
           for (const o of objects) {
             if (o.t < 0 || o.t > 1.05) continue;
+
+            // Позиция и масштаб объекта на дорожке
             const pos = laneXY(o.lane, o.t);
-            const depthScale = 0.55 + 0.9 * o.t; // smaller at top, bigger near bottom
-            const r = (o.radius * o.baseScale) * depthScale;
+            const depthScale = OBJ_SCALE + 0.9 * o.t;    // как и при отрисовке
+            const scale = o.baseScale * depthScale;
 
-            // сохраняем радиус для отладки
-            o._debugR = r;
+            // ВНИМАНИЕ: OBJ_SCALE — тот же коэффициент, что и в draw() при рисовании спрайта!
+            // Если там поменяешь — тут тоже обнови.
+            const drawW = o.sprite.width * scale * OBJ_SCALE;
+            const drawH = o.sprite.height * scale * OBJ_SCALE;
 
-            const dx = puck.x - pos.x;
-            const dy = puck.y - pos.y;
-            const dist = Math.hypot(dx, dy);
-            if (dist <= r + puck.r) {
-              o._debugHit = true;
+            // «Подрезаем» хитбокс, чтобы был честнее, чем весь прямоугольник спрайта
+            const hitW = drawW * OBJ_HITBOX_TIGHTNESS_X;
+            const hitH = drawH * OBJ_HITBOX_TIGHTNESS_Y;
+
+            // Прямоугольник объекта (по центру спрайта)
+            const objHB = { x: pos.x - hitW / 2, y: pos.y - hitH / 2, w: hitW, h: hitH };
+
+            // (опционально для отладки)
+            o._debugRect = objHB;
+
+            if (rectsIntersect(stickHB, objHB)) {
               lives = 0;
               endGame();
               break;
@@ -462,11 +482,11 @@
         // Objects
         for (const o of objects) {
           const p = laneXY(o.lane, o.t);
-          const depthScale = 0.55 + 0.9 * o.t; // perspective-ish
+          const depthScale = OBJ_SCALE + 0.9 * o.t; // perspective-ish
           const scale = o.baseScale * depthScale;
 
-          const w = o.sprite.width * scale * 0.55;
-          const h = o.sprite.height * scale * 0.55;
+          const w = o.sprite.width * scale * OBJ_SCALE;
+          const h = o.sprite.height * scale * OBJ_SCALE;
           ctx.drawImage(o.sprite, p.x - w / 2, p.y - h / 2, w, h);
 
         }
@@ -476,7 +496,8 @@
         drawStickAndPuck();
 
         if (DEBUG.collisions) {
-          drawCollisionDebug();
+          drawStickHitboxDebug();
+          drawObjectsHitboxDebug()
         }
         if (DEBUG.lanes) {
           // рисуем линии дорожек
@@ -494,35 +515,26 @@
 
       }
 
-      function drawCollisionDebug() {
-        const puck = getPuckWorld();
+      function drawStickHitboxDebug() {
+        const hb = getStickHitbox();
         ctx.save();
         ctx.lineWidth = 2;
-
-        // круг шайбы
-        ctx.beginPath();
-        ctx.strokeStyle = "rgba(30,110,255,0.9)";
-        ctx.arc(puck.x, puck.y, puck.r, 0, Math.PI * 2);
-        ctx.stroke();
-
-        // круги объектов
-        for (const o of objects) {
-          if (o.t < 0 || o.t > 1.1) continue;
-          const pos = laneXY(o.lane, o.t);
-          const r = o._debugR ?? 18;
-
-          ctx.beginPath();
-          ctx.strokeStyle = o._debugHit ? "rgba(230,40,40,0.95)" : "rgba(40,200,90,0.7)";
-          ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
-          ctx.stroke();
-
-          // сброс флага попадания
-          o._debugHit = false;
-        }
-
+        ctx.strokeStyle = "rgba(30,110,255,0.9)"; // синий
+        ctx.strokeRect(hb.x, hb.y, hb.w, hb.h);
         ctx.restore();
       }
 
+      function drawObjectsHitboxDebug() {
+        ctx.save();
+        ctx.lineWidth = 2;
+        for (const o of objects) {
+          if (!o._debugRect) continue;
+          const r = o._debugRect;
+          ctx.strokeStyle = "rgba(40,200,90,0.8)"; // зелёный
+          ctx.strokeRect(r.x, r.y, r.w, r.h);
+        }
+        ctx.restore();
+      }
 
       function drawStickAndPuck() {
         const img = stick.img;
@@ -546,22 +558,33 @@
 
         // Puck (invisible sprite – we render as a simple dark circle; the stick image already shows one)
         // But for precise collision we compute its center:
-        const puck = getPuckWorld();
+        const puck = getStickHitbox();
         // Optional: draw helper (kept invisible in prod)
         // ctx.fillStyle = "rgba(0,0,0,.0001)"; ctx.beginPath(); ctx.arc(puck.x, puck.y, puck.r, 0, Math.PI*2); ctx.fill();
       }
 
-      function getPuckWorld() {
-        // Project the stick tip + offset into world coords (accounting rotation)
-        const cos = Math.cos(stick.angle);
-        const sin = Math.sin(stick.angle);
-        const px = stick.x + stick.puckOffset.x * cos - stick.puckOffset.y * sin;
-        const py = stick.y + stick.puckOffset.x * sin + stick.puckOffset.y * cos;
-        // Collision radius changes slightly with perspective near bottom
-        const r = 25;
-
-        return { x: px, y: py, r };
+      // Прямоугольник клюшки (ось-выравненный, без вращения)
+      function getStickHitbox() {
+        const x = stick.x;
+        const y = stick.y;
+        return {
+          x: x - STICK_HITBOX.w / 2 - 10,
+          y: y - STICK_HITBOX.h / 2 + 30,
+          w: STICK_HITBOX.w,
+          h: STICK_HITBOX.h,
+        };
       }
+
+      // Проверка пересечения AABB
+      function rectsIntersect(a, b) {
+        return (
+          a.x < b.x + b.w &&
+          a.x + a.w > b.x &&
+          a.y < b.y + b.h &&
+          a.y + a.h > b.y
+        );
+      }
+
 
       /* ----------- Controls: touch/mouse in control zone ----------- */
       let dragging = false;
