@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DanglePro Minigame Widget</title>
+  <style>
+    :root {
+      --w: 440px;
+      /* base artwork width */
+      --h: 956px;
+      /* base artwork height */
+      --controlH: 270px;
+      /* white control zone height */
+      --laneTopY: 300px;
+      /* where objects appear (approx garage door) */
+      --laneBotY: 820px;
+      /* where objects exit / collide */
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: #111;
+      display: grid;
+      place-items: center;
+      height: 100dvh;
+      font-family: system-ui, Roboto, Arial, Helvetica, sans-serif;
+    }
+
+    .dp-wrap {
+      position: relative;
+      width: min(90vw, var(--w));
+      aspect-ratio: 440/956;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+      /* we handle touch ourselves */
+    }
+
+    canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .hud {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      padding: 14px 18px;
+      color: #000;
+      font-weight: 900;
+      letter-spacing: 1px;
+      text-shadow: 0 1px 0 #fff, 0 -1px 0 #fff, 1px 0 0 #fff, -1px 0 0 #fff;
+    }
+
+    .hud .score {
+      font-size: 32px;
+      display: flex;
+      width: 100%;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .hud .score .num {
+      color: #c81818;
+    }
+
+    .startBtn,
+    .restartBtn {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: calc(var(--controlH) + 28px);
+      padding: 14px 22px;
+      border-radius: 999px;
+      border: none;
+      cursor: pointer;
+      font-weight: 800;
+      font-size: 16px;
+      letter-spacing: .4px;
+      background: #111;
+      color: #fff;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, .35);
+    }
+
+    .restartBtn {
+      display: none;
+    }
+
+    .controlZone {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: var(--controlH);
+      background: #fff;
+      opacity: 0;
+      border-top: 4px solid #e9e9e9;
+      display: grid;
+      place-items: center;
+    }
+
+    .gameover {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, .58);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      color: #fff;
+      padding: 24px;
+    }
+
+    .gameover .card {
+      background: rgba(0, 0, 0, .65);
+      border: 1px solid rgba(255, 255, 255, .15);
+      border-radius: 18px;
+      padding: 20px 22px;
+      width: min(90%, 360px);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
+    }
+
+    .gameover h2 {
+      margin: 0 0 6px;
+      font-size: 24px;
+    }
+
+    .gameover p {
+      margin: 0 0 14px;
+      opacity: .9;
+    }
+
+    .gameover .restartBtn {
+      display: inline-block;
+      position: static;
+      transform: none;
+      margin-top: 6px;
+    }
+
+    /* Hide default outline on buttons but keep focus visible for a11y */
+    .startBtn:focus-visible,
+    .restartBtn:focus-visible {
+      outline: 3px solid #3ea7ff;
+      outline-offset: 3px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="dp-wrap" id="dp">
+    <canvas id="dp-canvas" width="440" height="956" aria-label="DanglePro Minigame"></canvas>
+
+    <div class="hud">
+      <div class="score">SCORE: <span class="num" id="dp-score">0</span></div>
+    </div>
+
+    <button class="startBtn" id="dp-start">START THE GAME</button>
+
+    <div class="gameover" id="dp-over" role="dialog" aria-modal="true" aria-labelledby="dp-over-title">
+      <div class="card">
+        <h2 id="dp-over-title">Game Over</h2>
+        <p>Your score: <strong id="dp-over-score">0</strong></p>
+        <button class="restartBtn" id="dp-restart">Play again</button>
+      </div>
+    </div>
+
+    <div class="controlZone" id="dp-zone" aria-label="Control zone. Drag or use arrow keys.">
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      /* ================= CONFIG ================= */
+      const ASSETS_BASE = "./"; // change if images live elsewhere
+      const ART = {
+        scene: "scene_bg.jpg",
+        stick: "stick.png",
+        objects: [
+          "object_1.png",
+          "object_2.png",
+          "object_3.png",
+          "object_4.png",
+          "object_5.png",
+          "object_6.png",
+          "object_7.png",
+          "object_8.png",
+          "object_9.png",
+        ]
+      };
+      const OBJECT_POINTS = {
+        "object_1.png": 5,
+        "object_2.png": 3,
+        "object_3.png": 2,
+        "object_4.png": 4,
+        "object_5.png": 1,
+        "object_6.png": 7,
+        "object_7.png": 6,
+        "object_8.png": 8,
+        "object_9.png": 9,
+      };
+      const DIM = { w: 440, h: 956 };
+      const LANE_TOP_Y = 460;  // spawn Y (matches artwork perspective)
+      const LANE_BOT_Y = 920;  // exit/collision Y
+      const CONTROL_H = 270;
+      const LIVES = 1;         // one life by spec
+      const BASE_SPAWN_EVERY = 800;  // ms
+      const BASE_SPEED = 100;        // px/sec at start (will scale per lane and difficulty)
+      const SPEED_GROWTH_PER_SEC = 2; // progressive difficulty (added to base each second)
+      const LANE_COUNT = 6;
+      const PLAY_BOUNDS = { left: 45, right: DIM.w - 45 };
+      const DEBUG = { collisions: false, lanes: false };
+
+      /* ========================================== */
+
+      const wrap = document.getElementById("dp");
+      const cvs = document.getElementById("dp-canvas");
+      const ctx = cvs.getContext("2d");
+      const zone = document.getElementById("dp-zone");
+      const startBtn = document.getElementById("dp-start");
+      const overPane = document.getElementById("dp-over");
+      const overScore = document.getElementById("dp-over-score");
+      const restartBtn = document.getElementById("dp-restart");
+      const scoreEl = document.getElementById("dp-score");
+
+      let images = {};
+      let running = false;
+      let startedAt = 0;
+      let lastTs = 0;
+      let score = 0;
+      let lives = LIVES;
+
+      const lanes = makeLanes();
+      const objects = []; // active obstacles
+
+      // Puck / stick control
+      const stick = {
+        img: null, // loaded later
+        // mounted near bottom; we allow horizontal move in [margin, w-margin]
+        x: DIM.w / 2,
+        y: LANE_BOT_Y - 60,
+        angle: -0.08, // slight tilt
+        puckOffset: { x: -20, y: 20 }, // where puck is relative to stick tip (visual tweak)
+        width: 52,  // drawn image width (autoscaled by image ratio)
+        height: 116,
+        puckRadius: 22, // collision radius scaled with perspective-ish
+      };
+
+      // External scoring hook (override in host)
+      window.onDPScore = window.onDPScore || function (score) {
+        // Example: send to back-end
+        // fetch("/api/dpScore", {method:"POST", headers:{'Content-Type':'application/json'}, body:JSON.stringify({score})});
+        console.debug("[DP] Score submitted:", score);
+      };
+
+      function loadImage(src) {
+        return new Promise((resolve, reject) => {
+          const im = new Image();
+          im.onload = () => resolve(im);
+          im.onerror = reject;
+          im.src = ASSETS_BASE + src;
+        });
+      }
+
+      async function loadAssets() {
+        const [scene, stickImg, ...objImgs] = await Promise.all([
+          loadImage(ART.scene),
+          loadImage(ART.stick),
+          ...ART.objects.map(loadImage),
+        ]);
+        images.scene = scene;
+        images.stick = stickImg;
+        images.objects = objImgs;
+        stick.img = stickImg;
+      }
+
+      // Define six perspective lanes by start/end XY.
+      // Start (top) is slightly more centered due to perspective narrowing.
+      function makeLanes() {
+        // x positions at top and at bottom, eyeballed from the dashed guide image
+        const topXs = [86, 134, 182, 230, 278, 326];
+        const botXs = [54, 137, 191, 247, 304, 360];
+        const lanes = [];
+        for (let i = 0; i < LANE_COUNT; i++) {
+          lanes.push({
+            i,
+            top: { x: topXs[i], y: LANE_TOP_Y },
+            bot: { x: botXs[i], y: LANE_BOT_Y },
+            // lane speed multiplier (slight variation)
+            mult: 0.9 + Math.random() * 0.3
+          });
+        }
+        return lanes;
+      }
+
+      function laneXY(lane, t) {
+        // t: 0..1 from top to bottom
+        return {
+          x: lane.top.x + (lane.bot.x - lane.top.x) * t,
+          y: lane.top.y + (lane.bot.y - lane.top.y) * t
+        };
+      }
+
+      function spawnObject() {
+        const lane = lanes[Math.floor(Math.random() * LANE_COUNT)];
+
+        const idx = Math.floor(Math.random() * ART.objects.length);
+        const spriteName = ART.objects[idx];            // имя файла
+        const sprite = images.objects[idx];             // картинка
+        const points = OBJECT_POINTS[spriteName] ?? 1;  // очки за объект
+
+        const baseScale = 0.8 + Math.random() * 0.6;
+        const secs = (performance.now() - startedAt) / 1000;
+        const progressive = BASE_SPEED + SPEED_GROWTH_PER_SEC * secs;
+        const pxPerSec = (progressive * lane.mult) * (0.85 + Math.random() * 0.3);
+
+        objects.push({
+          lane,
+          sprite,
+          points,      // <-- добавили
+          t: 0,
+          speed: pxPerSec,
+          baseScale,
+          passed: false,
+          radius: 18,
+        });
+      }
+
+      function resetGame() {
+        score = 0;
+        lives = LIVES;
+        objects.length = 0;
+        scoreEl.textContent = "0";
+        overPane.style.display = "none";
+      }
+
+      function startGame() {
+        if (!images.scene) return; // not loaded yet
+        resetGame();
+        running = true;
+        startedAt = performance.now();
+        lastTs = startedAt;
+        startBtn.style.display = "none";
+        loop();
+        scheduleSpawns();
+      }
+
+      function scheduleSpawns() {
+        if (!running) return;
+        // Decrease interval over time to raise difficulty a bit
+        const secs = (performance.now() - startedAt) / 1000;
+        const every = Math.max(350, BASE_SPAWN_EVERY - secs * 10);
+        spawnObject();
+        setTimeout(scheduleSpawns, every);
+      }
+
+      function endGame() {
+        running = false;
+        overScore.textContent = String(score);
+        overPane.style.display = "flex";
+        window.onDPScore(score); // report score
+      }
+
+      function loop(ts) {
+        if (!running) return;
+        requestAnimationFrame(loop);
+        const now = ts || performance.now();
+        const dt = Math.min(0.035, (now - lastTs) / 1000); // clamp delta
+        lastTs = now;
+
+        update(dt);
+        draw();
+      }
+
+      function update(dt) {
+        // Keyboard horizontal control easing already handled via handlers; nothing here
+        // Move objects
+        for (const o of objects) {
+          // advance 't' based on desired px/sec along lane vertical distance
+          const laneDist = (o.lane.bot.y - o.lane.top.y);
+          const tDelta = (o.speed * dt) / laneDist;
+          o.t += tDelta;
+
+          // update pass / score
+          if (!o.passed && o.t >= 1) {
+            o.passed = true;
+            score += o.points;
+            scoreEl.textContent = String(score);
+          }
+        }
+
+        // Remove fully off-screen
+        for (let i = objects.length - 1; i >= 0; i--) {
+          if (objects[i].t > 1.2) objects.splice(i, 1);
+        }
+
+        // Collision (only if we still have life)
+        if (lives > 0) {
+          const puck = getPuckWorld();
+          for (const o of objects) {
+            if (o.t < 0 || o.t > 1.05) continue;
+            const pos = laneXY(o.lane, o.t);
+            const depthScale = 0.55 + 0.9 * o.t; // smaller at top, bigger near bottom
+            const r = (o.radius * o.baseScale) * depthScale;
+
+            // сохраняем радиус для отладки
+            o._debugR = r;
+
+            const dx = puck.x - pos.x;
+            const dy = puck.y - pos.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist <= r + puck.r) {
+              o._debugHit = true;
+              lives = 0;
+              endGame();
+              break;
+            }
+          }
+        }
+      }
+
+      function draw() {
+        // Scene
+        ctx.clearRect(0, 0, DIM.w, DIM.h);
+        ctx.drawImage(images.scene, 0, 0, DIM.w, DIM.h);
+
+
+
+        // Objects
+        for (const o of objects) {
+          const p = laneXY(o.lane, o.t);
+          const depthScale = 0.55 + 0.9 * o.t; // perspective-ish
+          const scale = o.baseScale * depthScale;
+
+          const w = o.sprite.width * scale * 0.55;
+          const h = o.sprite.height * scale * 0.55;
+          ctx.drawImage(o.sprite, p.x - w / 2, p.y - h / 2, w, h);
+
+        }
+
+
+        // Stick + puck
+        drawStickAndPuck();
+
+        if (DEBUG.collisions) {
+          drawCollisionDebug();
+        }
+        if (DEBUG.lanes) {
+          // рисуем линии дорожек
+          ctx.save();
+          ctx.strokeStyle = "rgba(0,120,255,.35)";
+          ctx.setLineDash([6, 6]);
+          for (const l of lanes) {
+            ctx.beginPath();
+            ctx.moveTo(l.top.x, l.top.y);
+            ctx.lineTo(l.bot.x, l.bot.y);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+
+      }
+
+      function drawCollisionDebug() {
+        const puck = getPuckWorld();
+        ctx.save();
+        ctx.lineWidth = 2;
+
+        // круг шайбы
+        ctx.beginPath();
+        ctx.strokeStyle = "rgba(30,110,255,0.9)";
+        ctx.arc(puck.x, puck.y, puck.r, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // круги объектов
+        for (const o of objects) {
+          if (o.t < 0 || o.t > 1.1) continue;
+          const pos = laneXY(o.lane, o.t);
+          const r = o._debugR ?? 18;
+
+          ctx.beginPath();
+          ctx.strokeStyle = o._debugHit ? "rgba(230,40,40,0.95)" : "rgba(40,200,90,0.7)";
+          ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // сброс флага попадания
+          o._debugHit = false;
+        }
+
+        ctx.restore();
+      }
+
+
+      function drawStickAndPuck() {
+        const img = stick.img;
+        if (!img) return;
+
+        // Draw stick around its lower tip (right edge of the sprite), then compute puck
+        const drawW = stick.width;
+        const drawH = stick.height;
+
+        const tipX = stick.x;
+        const tipY = stick.y;
+
+        ctx.save();
+        ctx.translate(tipX, tipY);
+        ctx.rotate(stick.angle);
+        // image anchor so that tip is near right-bottom-ish of the sprite
+        const anchorX = drawW * 0.82;
+        const anchorY = drawH * 0.15;
+        ctx.drawImage(img, -anchorX, -anchorY, drawW, drawH);
+        ctx.restore();
+
+        // Puck (invisible sprite – we render as a simple dark circle; the stick image already shows one)
+        // But for precise collision we compute its center:
+        const puck = getPuckWorld();
+        // Optional: draw helper (kept invisible in prod)
+        // ctx.fillStyle = "rgba(0,0,0,.0001)"; ctx.beginPath(); ctx.arc(puck.x, puck.y, puck.r, 0, Math.PI*2); ctx.fill();
+      }
+
+      function getPuckWorld() {
+        // Project the stick tip + offset into world coords (accounting rotation)
+        const cos = Math.cos(stick.angle);
+        const sin = Math.sin(stick.angle);
+        const px = stick.x + stick.puckOffset.x * cos - stick.puckOffset.y * sin;
+        const py = stick.y + stick.puckOffset.x * sin + stick.puckOffset.y * cos;
+        // Collision radius changes slightly with perspective near bottom
+        const r = 25;
+
+        return { x: px, y: py, r };
+      }
+
+      /* ----------- Controls: touch/mouse in control zone ----------- */
+      let dragging = false;
+
+      function clampStickX(x) {
+        return Math.max(PLAY_BOUNDS.left, Math.min(PLAY_BOUNDS.right, x));
+      }
+
+      function pointerToLocal(e) {
+        const rect = cvs.getBoundingClientRect();
+        const isTouch = e.touches && e.touches.length;
+        const clientX = isTouch ? e.touches[0].clientX : e.clientX;
+        const clientY = isTouch ? e.touches[0].clientY : e.clientY;
+        // Convert to canvas coordinates (440x956)
+        const x = (clientX - rect.left) * (DIM.w / rect.width);
+        const y = (clientY - rect.top) * (DIM.h / rect.height);
+        return { x, y };
+      }
+
+      zone.addEventListener("pointerdown", (e) => {
+        dragging = true;
+        zone.setPointerCapture(e.pointerId);
+        const p = pointerToLocal(e);
+        stick.x = clampStickX(p.x);
+      });
+
+      zone.addEventListener("pointermove", (e) => {
+        if (!dragging) return;
+        const p = pointerToLocal(e);
+        stick.x = clampStickX(p.x);
+      });
+
+      const stopDrag = (e) => { dragging = false; try { zone.releasePointerCapture(e.pointerId); } catch { } };
+      zone.addEventListener("pointerup", stopDrag);
+      zone.addEventListener("pointercancel", stopDrag);
+
+      /* ----------- Controls: keyboard arrows ----------- */
+      let keyDir = 0; // -1 left, +1 right
+      const KEY_SPEED = 460; // px/sec
+
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowLeft") { keyDir = -1; e.preventDefault(); }
+        if (e.key === "ArrowRight") { keyDir = +1; e.preventDefault(); }
+        if (e.key.toLowerCase() === "c") DEBUG.collisions = !DEBUG.collisions;
+        if (e.key.toLowerCase() === "l") DEBUG.lanes = !DEBUG.lanes;
+
+        console.debug("[DP] Debug mode:", DEBUG);
+      });
+
+      window.addEventListener("keyup", (e) => {
+        if ((e.key === "ArrowLeft" && keyDir < 0) || (e.key === "ArrowRight" && keyDir > 0)) keyDir = 0;
+      });
+
+      // integrate keyboard movement into loop timing by hooking before update on each RAF
+      const _origUpdate = update;
+      update = function (dt) {
+        if (keyDir) {
+          stick.x = clampStickX(stick.x + keyDir * KEY_SPEED * dt);
+        }
+        _origUpdate(dt);
+      };
+
+      /* ---------------- UI buttons ----------------- */
+      startBtn.addEventListener("click", startGame);
+      restartBtn.addEventListener("click", () => {
+        overPane.style.display = "none";
+        startGame();
+      });
+
+      /* -------------- Boot ---------------- */
+      loadAssets().then(() => {
+        draw(); // initial scene render
+        restartBtn.disabled = false;
+      }).catch(err => {
+        console.error("Failed to load assets", err);
+      });
+
+    })();
+  </script>
+</body>
+
+</html>
