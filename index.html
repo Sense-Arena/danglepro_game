@@ -210,30 +210,34 @@
         scene: "scene_bg.jpg",
         stick: "stick.png",
         objects: [
-          "object_1.png",
+          "object_1.webp",
           "object_2.png",
-          "object_3.png",
+          "object_3.webp",
           "object_4.png",
           "object_5.png",
-          "object_6.png",
+          "object_6.webp",
           "object_7.png",
-          "object_8.png",
+          "object_8.webp",
           "object_9.png",
         ]
       };
       const OBJECT_POINTS = {
-        "object_1.png": 5,
+        "object_1.webp": 5,
         "object_2.png": 3,
-        "object_3.png": 2,
+        "object_3.webp": 2,
         "object_4.png": 4,
         "object_5.png": 1,
-        "object_6.png": 7,
+        "object_6.webp": 7,
         "object_7.png": 6,
-        "object_8.png": 8,
+        "object_8.webp": 8,
         "object_9.png": 9,
       };
+      const SFX = {
+        hit: new Audio(ASSETS_BASE + "failure.wav"),
+        pass: new Audio(ASSETS_BASE + "success.wav"),
+      };
       const DIM = { w: 440, h: 956 };
-      const LANE_TOP_Y = 460;  // spawn Y (matches artwork perspective)
+      const LANE_TOP_Y = 520;  // spawn Y (matches artwork perspective)
       const LANE_BOT_Y = 920;  // exit/collision Y
       const CONTROL_H = 270;
       const LIVES = 1;         // one life by spec
@@ -251,9 +255,13 @@
       const OBJ_HITBOX_TIGHTNESS_X = 0.70;
       const OBJ_HITBOX_TIGHTNESS_Y = 0.70;
 
-      const OBJ_SCALE = 0.65
-
+      const OBJ_SCALE = 0.65;
       /* ========================================== */
+
+      // "пробный" немой старт — браузеры быстрее создают аудиопотоки
+      SFX.hit.muted = true; SFX.hit.play().finally(() => { SFX.hit.pause(); SFX.hit.currentTime = 0; SFX.hit.muted = false; });
+      SFX.pass.muted = true; SFX.pass.play().finally(() => { SFX.pass.pause(); SFX.pass.currentTime = 0; SFX.pass.muted = false; });
+
 
       const wrap = document.getElementById("dp");
       const cvs = document.getElementById("dp-canvas");
@@ -280,7 +288,7 @@
         img: null, // loaded later
         // mounted near bottom; we allow horizontal move in [margin, w-margin]
         x: DIM.w / 2,
-        y: LANE_BOT_Y - 60,
+        y: LANE_BOT_Y - 150,
         angle: -0.08, // slight tilt
         puckOffset: { x: -20, y: 20 }, // where puck is relative to stick tip (visual tweak)
         width: 52,  // drawn image width (autoscaled by image ratio)
@@ -294,6 +302,15 @@
         // fetch("/api/dpScore", {method:"POST", headers:{'Content-Type':'application/json'}, body:JSON.stringify({score})});
         console.debug("[DP] Score submitted:", score);
       };
+
+      function playSfx(name, { volume = 0.9, rate = 1 } = {}) {
+        const src = SFX[name];
+        if (!src) return;
+        const a = src.cloneNode();     // независимый экземпляр
+        a.volume = volume;
+        a.playbackRate = rate;
+        a.play().catch(() => { });
+      }
 
       function loadImage(src) {
         return new Promise((resolve, reject) => {
@@ -319,16 +336,17 @@
       // Define six perspective lanes by start/end XY.
       // Start (top) is slightly more centered due to perspective narrowing.
       function makeLanes() {
-        // x positions at top and at bottom, eyeballed from the dashed guide image
-        const topXs = [86, 134, 182, 230, 278, 326];
-        const botXs = [54, 137, 191, 247, 304, 360];
+        // верхние точки (ближе к центру)
+        const topXs = [135, 170, 205, 240, 275, 305];
+        // нижние точки (также ближе)
+        const botXs = [40, 110, 175, 245, 315, 390];
+
         const lanes = [];
         for (let i = 0; i < LANE_COUNT; i++) {
           lanes.push({
             i,
             top: { x: topXs[i], y: LANE_TOP_Y },
             bot: { x: botXs[i], y: LANE_BOT_Y },
-            // lane speed multiplier (slight variation)
             mult: 0.9 + Math.random() * 0.3
           });
         }
@@ -343,15 +361,22 @@
         };
       }
 
+      function laneXYWithDrift(o, t) {
+        return laneXY(o.lane, t);
+      }
+
+
       function spawnObject() {
         const lane = lanes[Math.floor(Math.random() * LANE_COUNT)];
 
         const idx = Math.floor(Math.random() * ART.objects.length);
-        const spriteName = ART.objects[idx];            // имя файла
-        const sprite = images.objects[idx];             // картинка
-        const points = OBJECT_POINTS[spriteName] ?? 1;  // очки за объект
+        const spriteName = ART.objects[idx];
+        const sprite = images.objects[idx];
+        const points = OBJECT_POINTS[spriteName] ?? 1;
 
-        const baseScale = 0.8 + Math.random() * 0.6;
+        // масштаб/скорость — как было
+        const startScale = 0.6 + Math.random() * 0.4; // если уже переходил на start/target
+        const targetScale = 1.0;
         const secs = (performance.now() - startedAt) / 1000;
         const progressive = BASE_SPEED + SPEED_GROWTH_PER_SEC * secs;
         const pxPerSec = (progressive * lane.mult) * (0.85 + Math.random() * 0.3);
@@ -359,10 +384,11 @@
         objects.push({
           lane,
           sprite,
-          points,      // <-- добавили
+          points,
           t: 0,
           speed: pxPerSec,
-          baseScale,
+          startScale,
+          targetScale,
           passed: false,
           radius: 18,
         });
@@ -428,6 +454,7 @@
             o.passed = true;
             score += o.points;
             scoreEl.textContent = String(score);
+            playSfx("pass", { volume: 0.7 });
           }
         }
 
@@ -444,9 +471,10 @@
             if (o.t < 0 || o.t > 1.05) continue;
 
             // Позиция и масштаб объекта на дорожке
-            const pos = laneXY(o.lane, o.t);
-            const depthScale = OBJ_SCALE + 0.9 * o.t;    // как и при отрисовке
-            const scale = o.baseScale * depthScale;
+            const pos = laneXYWithDrift(o, o.t);
+            const interpScale = o.startScale + (o.targetScale - o.startScale) * o.t;
+            const depthScale = OBJ_SCALE + 0.9 * o.t;// как и при отрисовке
+            const scale = interpScale * depthScale;
 
             // ВНИМАНИЕ: OBJ_SCALE — тот же коэффициент, что и в draw() при рисовании спрайта!
             // Если там поменяешь — тут тоже обнови.
@@ -464,6 +492,7 @@
             o._debugRect = objHB;
 
             if (rectsIntersect(stickHB, objHB)) {
+              playSfx("hit", { volume: 1 });
               lives = 0;
               endGame();
               break;
@@ -481,9 +510,10 @@
 
         // Objects
         for (const o of objects) {
-          const p = laneXY(o.lane, o.t);
-          const depthScale = OBJ_SCALE + 0.9 * o.t; // perspective-ish
-          const scale = o.baseScale * depthScale;
+          const p = laneXYWithDrift(o, o.t);
+          const interpScale = o.startScale + (o.targetScale - o.startScale) * o.t;
+          const depthScale = OBJ_SCALE + 0.9 * o.t;// как и при отрисовке
+          const scale = interpScale * depthScale;
 
           const w = o.sprite.width * scale * OBJ_SCALE;
           const h = o.sprite.height * scale * OBJ_SCALE;
