@@ -235,10 +235,11 @@
       const SFX = {
         hit: new Audio(ASSETS_BASE + "failure.wav"),
         pass: new Audio(ASSETS_BASE + "success.wav"),
+        move: new Audio(ASSETS_BASE + "move.ogg"),
       };
       const DIM = { w: 440, h: 956 };
       const LANE_TOP_Y = 520;  // spawn Y (matches artwork perspective)
-      const LANE_BOT_Y = 920;  // exit/collision Y
+      const LANE_BOT_Y = 870;  // exit/collision Y
       const CONTROL_H = 270;
       const LIVES = 1;         // one life by spec
       const BASE_SPAWN_EVERY = 800;  // ms
@@ -288,7 +289,7 @@
         img: null, // loaded later
         // mounted near bottom; we allow horizontal move in [margin, w-margin]
         x: DIM.w / 2,
-        y: LANE_BOT_Y - 150,
+        y: LANE_BOT_Y - 100,
         angle: -0.08, // slight tilt
         puckOffset: { x: -20, y: 20 }, // where puck is relative to stick tip (visual tweak)
         width: 52,  // drawn image width (autoscaled by image ratio)
@@ -615,6 +616,16 @@
         );
       }
 
+      let lastMoveSfx = 0;
+
+      function playMoveSfx() {
+        const now = performance.now();
+        if (now - lastMoveSfx > 1500) {  // не чаще раза в 150мс
+          playSfx("move", { volume: 0.5 });
+          lastMoveSfx = now;
+        }
+      }
+
 
       /* ----------- Controls: touch/mouse in control zone ----------- */
       let dragging = false;
@@ -636,6 +647,7 @@
 
       zone.addEventListener("pointerdown", (e) => {
         dragging = true;
+
         zone.setPointerCapture(e.pointerId);
         const p = pointerToLocal(e);
         stick.x = clampStickX(p.x);
@@ -643,6 +655,7 @@
 
       zone.addEventListener("pointermove", (e) => {
         if (!dragging) return;
+        playMoveSfx();
         const p = pointerToLocal(e);
         stick.x = clampStickX(p.x);
       });
@@ -656,8 +669,14 @@
       const KEY_SPEED = 460; // px/sec
 
       window.addEventListener("keydown", (e) => {
-        if (e.key === "ArrowLeft") { keyDir = -1; e.preventDefault(); }
-        if (e.key === "ArrowRight") { keyDir = +1; e.preventDefault(); }
+        if (e.key === "ArrowLeft") {
+          keyDir = -1; e.preventDefault();
+          playSfx("move", { volume: 0.5 });
+        }
+        if (e.key === "ArrowRight") {
+          keyDir = +1; e.preventDefault();
+          playSfx("move", { volume: 0.5 });
+        }
         if (e.key.toLowerCase() === "c") DEBUG.collisions = !DEBUG.collisions;
         if (e.key.toLowerCase() === "l") DEBUG.lanes = !DEBUG.lanes;
 
