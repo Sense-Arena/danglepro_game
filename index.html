@@ -235,7 +235,6 @@
       const SFX = {
         hit: new Audio(ASSETS_BASE + "failure.wav"),
         pass: new Audio(ASSETS_BASE + "success.wav"),
-        move: new Audio(ASSETS_BASE + "move.ogg"),
       };
       const DIM = { w: 440, h: 956 };
       const LANE_TOP_Y = 520;  // spawn Y (matches artwork perspective)
@@ -618,15 +617,6 @@
 
       let lastMoveSfx = 0;
 
-      function playMoveSfx() {
-        const now = performance.now();
-        if (now - lastMoveSfx > 1500) {  // не чаще раза в 150мс
-          playSfx("move", { volume: 0.5 });
-          lastMoveSfx = now;
-        }
-      }
-
-
       /* ----------- Controls: touch/mouse in control zone ----------- */
       let dragging = false;
 
@@ -655,7 +645,6 @@
 
       zone.addEventListener("pointermove", (e) => {
         if (!dragging) return;
-        playMoveSfx();
         const p = pointerToLocal(e);
         stick.x = clampStickX(p.x);
       });
