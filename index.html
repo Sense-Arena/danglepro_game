@@ -296,6 +296,11 @@
         );
       };
 
+      window.addEventListener('message', (e) => {
+        if (!e.data || e.data.type !== "DP_START_GAME") return;
+        if (!running) startGame();
+      });
+
       function playSfx(name, { volume = 0.9, rate = 1 } = {}) {
         const src = SFX[name];
         if (!src) return;
