@@ -258,7 +258,7 @@
       const cvs = document.getElementById("dp-canvas");
       const ctx = cvs.getContext("2d");
       const zone = document.getElementById("dp-zone");
-      const startBtn = document.getElementById("dp-start");
+      // const startBtn = document.getElementById("dp-start");
       const overPane = document.getElementById("dp-over");
       const overScore = document.getElementById("dp-over-score");
       const restartBtn = document.getElementById("dp-restart");
@@ -406,7 +406,7 @@
         running = true;
         startedAt = performance.now();
         lastTs = startedAt;
-        startBtn.style.display = "none";
+        // startBtn.style.display = "none";
         loop();
         scheduleSpawns();
       }
@@ -684,7 +684,7 @@
       };
 
       /* ---------------- UI buttons ----------------- */
-      startBtn.addEventListener("click", startGame);
+      // startBtn.addEventListener("click", startGame);
       restartBtn.addEventListener("click", () => {
         overPane.style.display = "none";
         startGame();
